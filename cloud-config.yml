@@ -1,0 +1,28 @@
+#cloud-config
+
+users:
+  - name: nomero
+    uid: 2000
+
+write_files:
+  - path: /etc/systemd/system/nomero.service
+    permissions: 0644
+    owner: root
+    content: |
+      [Unit]
+      Description=Start nomero container
+      Wants=gcr-online.target
+      Requires=docker.service
+      After=gcr-online.target docker.service
+
+      [Service]
+      Environment="HOME=/home/nomero"
+      ExecStartPre=/bin/bash -c "/usr/bin/docker-credential-gcr configure-docker && /usr/bin/docker container inspect nomero 2> /dev/null || \
+        /usr/bin/docker run -d --rm --name=nomero -p 4000:4000 us.gcr.io/rocketseat-42/nomero:$NOMERO_VERSION"
+      ExecStart=/usr/bin/docker start -a nomero
+      ExecStop=/usr/bin/docker stop -t 10 nomero
+      ExecStopPost=/usr/bin/docker rm nomero
+
+runcmd:
+  - systemctl daemon-reload
+  - systemctl start nomero.service >> /var/log/start-vm.log 2>&1
