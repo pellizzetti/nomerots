@@ -18,7 +18,7 @@ write_files:
       [Service]
       Environment="HOME=/home/nomero"
       ExecStartPre=/bin/bash -c "/usr/bin/docker-credential-gcr configure-docker && /usr/bin/docker container inspect nomero 2> /dev/null || \
-        /usr/bin/docker run -d --rm --name=nomero -p 4000:4000 us.gcr.io/rocketseat-42/nomero:$NOMERO_VERSION"
+        /usr/bin/docker run -d --rm --name=nomero -p 4000:4000 gcr.io/expansion-week/nomero:$NOMERO_VERSION"
       ExecStart=/usr/bin/docker start -a nomero
       ExecStop=/usr/bin/docker stop -t 10 nomero
       ExecStopPost=/usr/bin/docker rm nomero
