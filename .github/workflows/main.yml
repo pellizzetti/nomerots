@@ -1,0 +1,66 @@
+name: Build and deploy to GCE
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+  IMAGE: nomero
+  REGISTRY_HOSTNAME: gcr.io
+
+jobs:
+  setup-build-publish-deploy:
+    name: Setup, Build, Publish and Deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+    
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup gcloud SDK
+      uses: google-github-actions/setup-gcloud@master
+      with:
+        project_id: ${{ secrets.GCP_PROJECT }}
+        service_account_key: ${{ secrets.NOMERO_SA }}
+        export_default_credentials: true
+
+    - name: Configure docker
+      run: gcloud auth configure-docker
+
+    - name: Build our Dockerfile
+      run: |
+        docker build \
+        --build-arg VERSION="$GITHUB_SHA" \
+        -t "$REGISTRY_HOSTNAME"/"$GCP_PROJECT"/"$IMAGE":"$GITHUB_SHA" .
+    
+    - name: Publish to Container Registry
+      run: docker push "$REGISTRY_HOSTNAME"/"$GCP_PROJECT"/"$IMAGE":"$GITHUB_SHA"
+        
+    - name: Replace image version in cloud-config
+      run: sed "s|\$NOMERO_VERSION|$GITHUB_SHA|" cloud-config.yml
+      
+    - name: Create instance template
+      run: |
+        gcloud compute instance-templates create \
+        nomero-template-"${GITHUB_SHA::7}" --machine-type=n1-standard-1 \
+        --network=projects/"$GCP_PROJECT"/global/networks/default \
+        --network-tier=PREMIUM --maintenance-policy=MIGRATE \
+        --metadata-from-file=user-data=cloud-config.yml --tags=nomero \
+        --service-account=512636129409-compute@developer.gserviceaccount.com \
+        --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append \
+        --image=cos-93-16623-39-6 --image-project=cos-cloud --boot-disk-size=10GB \
+        --boot-disk-type=pd-balanced --boot-disk-device-name=instance-template-1 \
+        --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring \
+        --reservation-affinity=any
+        
+    - name: Apply Rolling update to MiG
+      run: |
+        gcloud compute instance-groups managed rolling-action start-update nomero-mig \
+        --project=expansion-week --type='opportunistic' --max-surge=1 --max-unavailable=1 \
+        --min-ready=0 --minimal-action='replace' --most-disruptive-allowed-action='' \
+        --replacement-method='substitute' \
+        --version=template=projects/expansion-week/global/instanceTemplates/nomero-template-"$GITHUB_SHA" \
+        --zone=us-east1-c
