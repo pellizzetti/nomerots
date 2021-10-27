@@ -42,7 +42,7 @@ app.get("/health", (_request, response) =>
   })
 );
 
-app.get("/fibonnaci/:number", (request, response) => {
+app.get("/fibonacci/:number", (request, response) => {
   const { fast } = request.query;
   const number = parseInt(request.params.number as string, 10);
 
