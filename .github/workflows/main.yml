@@ -40,12 +40,12 @@ jobs:
       run: docker push "$REGISTRY_HOSTNAME"/"$GCP_PROJECT"/"$IMAGE":"$GITHUB_SHA"
         
     - name: Replace image version in cloud-config
-      run: sed "s|\$NOMERO_VERSION|$GITHUB_SHA|" cloud-config.yml
+      run: sed -i -e "s/\$NOMERO_VERSION/$GITHUB_SHA/g" cloud-config.yml
       
     - name: Create instance template
       run: |
         gcloud compute instance-templates create \
-        nomero-template-"${GITHUB_SHA::7}" --machine-type=n1-standard-1 \
+        nomero-template-"$GITHUB_SHA" --machine-type=n1-standard-1 \
         --network=projects/"$GCP_PROJECT"/global/networks/default \
         --network-tier=PREMIUM --maintenance-policy=MIGRATE \
         --metadata-from-file=user-data=cloud-config.yml --tags=nomero \
@@ -59,8 +59,7 @@ jobs:
     - name: Apply Rolling update to MiG
       run: |
         gcloud compute instance-groups managed rolling-action start-update nomero-mig \
-        --project=expansion-week --type='opportunistic' --max-surge=1 --max-unavailable=1 \
-        --min-ready=0 --minimal-action='replace' --most-disruptive-allowed-action='' \
+        --project=expansion-week --type='proactive' --max-surge=1 --max-unavailable=1 \
         --replacement-method='substitute' \
         --version=template=projects/expansion-week/global/instanceTemplates/nomero-template-"$GITHUB_SHA" \
         --zone=us-east1-c
