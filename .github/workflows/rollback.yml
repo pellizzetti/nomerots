@@ -1,0 +1,41 @@
+name: Rollback
+
+on: 
+  workflow_dispatch:
+    inputs:
+      rollbackCommit:
+        description: 'Commit to rollback to'     
+        required: true
+        default: 'Ex: 447ad45'
+        
+env:
+  GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+  PROJECT: nomero
+
+jobs:
+  rollback-deployment:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    
+    steps:
+    
+    - name: Checkout
+      uses: actions/checkout@v2
+      
+    - name: Set short commit SHA
+      run: echo "GITHUB_SHA_SHORT=$(echo ${{ github.event.inputs.rollbackCommit }} | head -c7)" >> $GITHUB_ENV
+      env:
+        ROLLBACK_COMMIT: Mona
+      
+    - name: Setup gcloud SDK
+      uses: google-github-actions/setup-gcloud@master
+      with:
+        project_id: ${{ secrets.GCP_PROJECT }}
+        service_account_key: ${{ secrets.NOMERO_SA }}
+        export_default_credentials: true
+        
+    - name: Apply Rollback to MiG
+      run: |
+        gcloud compute instance-groups managed rolling-action start-update "$PROJECT"-mig \
+        --version=template=projects/"$GCP_PROJECT"/global/instanceTemplates/"$PROJECT"-template-"$GITHUB_SHA_SHORT" \
+        --max-unavailable=50% --zone=us-east1-c
