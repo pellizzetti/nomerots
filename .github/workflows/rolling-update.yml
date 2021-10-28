@@ -7,7 +7,7 @@ on:
 
 env:
   GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
-  IMAGE: nomero
+  PROJECT: nomero
   REGISTRY_HOSTNAME: gcr.io
 
 jobs:
@@ -19,6 +19,12 @@ jobs:
     
     - name: Checkout
       uses: actions/checkout@v2
+      
+    - name: Set short commit SHA
+      run: echo "GITHUB_SHA_SHORT=$(echo $GITHUB_SHA | head -c7)" >> $GITHUB_ENV
+      
+    - name: Prepare image and tag
+      run: echo "TAGGED_IMAGE=$REGISTRY_HOSTNAME/$GCP_PROJECT/$PROJECT:$GITHUB_SHA_SHORT" >> $GITHUB_ENV && cat $GITHUB_ENV
 
     - name: Setup gcloud SDK
       uses: google-github-actions/setup-gcloud@master
@@ -33,19 +39,19 @@ jobs:
     - name: Build our Dockerfile
       run: |
         docker build \
-        --build-arg VERSION="$GITHUB_SHA" \
-        -t "$REGISTRY_HOSTNAME"/"$GCP_PROJECT"/"$IMAGE":"$GITHUB_SHA" .
+        --build-arg VERSION="$GITHUB_SHA_SHORT" \
+        -t "$TAGGED_IMAGE" .
     
     - name: Publish to Container Registry
-      run: docker push "$REGISTRY_HOSTNAME"/"$GCP_PROJECT"/"$IMAGE":"$GITHUB_SHA"
+      run: docker push "$TAGGED_IMAGE"
         
-    - name: Replace image version in cloud-config
-      run: sed -i -e "s/\$NOMERO_VERSION/$GITHUB_SHA/g" cloud-config.yml
+    - name: Replace placeholder in cloud-config
+      run: sed -i -e "s|\$TAGGED_IMAGE|$TAGGED_IMAGE|g" cloud-config.yml
       
     - name: Create instance template
       run: |
         gcloud compute instance-templates create \
-        nomero-template-"$GITHUB_SHA" --machine-type=n1-standard-1 \
+        "$PROJECT"-template-"$GITHUB_SHA_SHORT" --machine-type=n1-standard-1 \
         --network=projects/"$GCP_PROJECT"/global/networks/default \
         --network-tier=PREMIUM --maintenance-policy=MIGRATE \
         --metadata-from-file=user-data=cloud-config.yml --tags=nomero \
@@ -58,8 +64,7 @@ jobs:
         
     - name: Apply Rolling update to MiG
       run: |
-        gcloud compute instance-groups managed rolling-action start-update nomero-mig \
-        --project=expansion-week --type='proactive' --max-surge=1 --max-unavailable=1 \
-        --replacement-method='substitute' \
-        --version=template=projects/expansion-week/global/instanceTemplates/nomero-template-"$GITHUB_SHA" \
+        gcloud compute instance-groups managed rolling-action start-update "$PROJECT"-mig \
+        --type='proactive' --max-surge=1 --max-unavailable=1 --replacement-method='substitute' \
+        --version=template=projects/"$GCP_PROJECT"/global/instanceTemplates/"$PROJECT"-template-"$GITHUB_SHA_SHORT" \
         --zone=us-east1-c
